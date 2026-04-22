@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { Moon, Sun, Plus, LogOut, Edit, Trash2 } from 'lucide-react';
+import { Moon, Sun, Plus, LogOut, Edit, Trash2, AlertTriangle, BellRing, Flag } from 'lucide-react';
 import {
   Pagination,
   PaginationContent,
@@ -27,6 +27,7 @@ import {
 
 const Dashboard = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [summaryTasks, setSummaryTasks] = useState<Task[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalTasks, setTotalTasks] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -48,16 +49,19 @@ const Dashboard = () => {
   const loadTasks = async () => {
     setIsLoading(true);
     try {
-      const response = await taskService.getTasks(currentPage, tasksPerPage);
+      const [pagedResponse, summaryResponse] = await Promise.all([
+        taskService.getTasks(currentPage, tasksPerPage),
+        taskService.getTasks(1, 1000),
+      ]);
 
-      setTasks(response.tasks);
-      setTotalTasks(response.pagination?.total || response.total || 0);
-
-      console.log("Loaded tasks:", response.tasks.length, "Total:", response.pagination?.total);
+      setTasks(pagedResponse.tasks);
+      setSummaryTasks(summaryResponse.tasks);
+      setTotalTasks(pagedResponse.pagination?.total || 0);
     } catch (error) {
+      const description = error instanceof Error ? error.message : 'Failed to load tasks';
       toast({
         title: 'Error',
-        description: 'Failed to load tasks',
+        description,
         variant: 'destructive',
       });
     } finally {
@@ -69,8 +73,13 @@ const Dashboard = () => {
     setUpdatingTaskId(taskId);
     try {
       await taskService.updateTaskStatus(taskId, newStatus);
-      setTasks(prevTasks =>
-        prevTasks.map(task =>
+      setTasks((prevTasks) =>
+        prevTasks.map((task) =>
+          task.id === taskId ? { ...task, status: newStatus } : task
+        )
+      );
+      setSummaryTasks((prevTasks) =>
+        prevTasks.map((task) =>
           task.id === taskId ? { ...task, status: newStatus } : task
         )
       );
@@ -79,9 +88,10 @@ const Dashboard = () => {
         description: 'Task status updated successfully',
       });
     } catch (error) {
+      const description = error instanceof Error ? error.message : 'Failed to update task status';
       toast({
         title: 'Error',
-        description: 'Failed to update task status',
+        description,
         variant: 'destructive',
       });
     } finally {
@@ -92,15 +102,18 @@ const Dashboard = () => {
   const handleDelete = async (taskId: string) => {
     try {
       await taskService.deleteTask(taskId);
+      setTasks((prevTasks) => prevTasks.filter((task) => task.id !== taskId));
+      setSummaryTasks((prevTasks) => prevTasks.filter((task) => task.id !== taskId));
+      setTotalTasks((prevTotal) => Math.max(0, prevTotal - 1));
       toast({
         title: 'Success',
         description: 'Task deleted successfully',
       });
-      loadTasks();
     } catch (error) {
+      const description = error instanceof Error ? error.message : 'Failed to delete task';
       toast({
         title: 'Error',
-        description: 'Failed to delete task',
+        description,
         variant: 'destructive',
       });
     }
@@ -111,12 +124,44 @@ const Dashboard = () => {
     navigate('/signin');
   };
 
+  const isOverdueTask = (task: Task) => {
+    if (!task.dueDate || task.status === 'completed') return false;
+    return new Date(task.dueDate).getTime() < Date.now();
+  };
+
+  const isReminderDueTask = (task: Task) => {
+    if (task.status === 'completed' || !task.reminderEnabled || !task.reminderAt) return false;
+    return new Date(task.reminderAt).getTime() <= Date.now();
+  };
+
+  const overdueTasks = summaryTasks.filter(isOverdueTask);
+  const reminderDueTasks = summaryTasks.filter(
+    (task) => isReminderDueTask(task) && !isOverdueTask(task)
+  );
+  const priorityTasks = summaryTasks.filter(
+    (task) => task.priority === 'High' && task.status !== 'completed'
+  );
+
+  const formatDueDate = (value?: string | null) => {
+    if (!value) return 'No due date';
+    return new Date(value).toLocaleString();
+  };
+
+  const getPriorityBadgeClasses = (priority: Task['priority']) => {
+    switch (priority) {
+      case 'High':
+        return 'border-red-200 bg-red-100 text-red-700';
+      case 'Medium':
+        return 'border-amber-200 bg-amber-100 text-amber-700';
+      default:
+        return 'border-emerald-200 bg-emerald-100 text-emerald-700';
+    }
+  };
+
   const getStatusBadgeVariant = (status: TaskStatus) => {
     switch (status) {
       case 'completed':
         return 'default';
-      case 'in-progress':
-        return 'secondary';
       case 'pending':
         return 'outline';
       default:
@@ -129,7 +174,7 @@ const Dashboard = () => {
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
+        <div className="container mx-auto flex items-center justify-between px-4 py-4">
           <div>
             <h1 className="text-2xl font-bold">Task Management</h1>
             <p className="text-sm text-muted-foreground">
@@ -141,7 +186,7 @@ const Dashboard = () => {
               {theme === 'light' ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
             </Button>
             <Button variant="outline" onClick={handleSignOut}>
-              <LogOut className="h-4 w-4 mr-2" />
+              <LogOut className="mr-2 h-4 w-4" />
               Sign Out
             </Button>
           </div>
@@ -149,24 +194,88 @@ const Dashboard = () => {
       </header>
 
       <main className="container mx-auto px-4 py-8">
-        <div className="flex justify-between items-center mb-6">
+        <div className="mb-6 flex items-center justify-between">
           <h2 className="text-xl font-semibold">My Tasks</h2>
           <Button onClick={() => navigate('/tasks/new')}>
-            <Plus className="h-4 w-4 mr-2" />
+            <Plus className="mr-2 h-4 w-4" />
             Add Task
           </Button>
         </div>
+
+        {!isLoading && (overdueTasks.length > 0 || reminderDueTasks.length > 0 || priorityTasks.length > 0) && (
+          <div className="mb-6 grid gap-4 md:grid-cols-2">
+            <Card className="border-red-200 bg-red-50/70">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-red-700">
+                  <AlertTriangle className="h-5 w-5" />
+                  Task Reminders
+                </CardTitle>
+                <CardDescription>
+                  {overdueTasks.length > 0
+                    ? `${overdueTasks.length} task${overdueTasks.length > 1 ? 's are' : ' is'} overdue and needs attention.`
+                    : reminderDueTasks.length > 0
+                      ? `${reminderDueTasks.length} task${reminderDueTasks.length > 1 ? 's are' : ' is'} in the reminder window.`
+                      : 'No due or overdue reminders right now.'}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {overdueTasks.slice(0, 3).map((task) => (
+                  <div key={task.id} className="rounded-md border border-red-200 bg-background/80 p-3">
+                    <p className="font-medium">{task.title}</p>
+                    <p className="text-sm text-muted-foreground">Overdue since {formatDueDate(task.dueDate)}</p>
+                  </div>
+                ))}
+                {overdueTasks.length === 0 && reminderDueTasks.slice(0, 3).map((task) => (
+                  <div key={task.id} className="rounded-md border border-red-200 bg-background/80 p-3">
+                    <p className="font-medium">{task.title}</p>
+                    <p className="text-sm text-muted-foreground">Due {formatDueDate(task.dueDate)}</p>
+                  </div>
+                ))}
+                {overdueTasks.length === 0 && reminderDueTasks.length === 0 && (
+                  <p className="text-sm text-muted-foreground">Everything is on track.</p>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="border-amber-200 bg-amber-50/70">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-amber-700">
+                  <Flag className="h-5 w-5" />
+                  Priority Tasks
+                </CardTitle>
+                <CardDescription>
+                  {priorityTasks.length > 0
+                    ? `${priorityTasks.length} high-priority task${priorityTasks.length > 1 ? 's are' : ' is'} still active.`
+                    : 'No active high-priority tasks right now.'}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {priorityTasks.slice(0, 3).map((task) => (
+                  <div key={task.id} className="rounded-md border border-amber-200 bg-background/80 p-3">
+                    <p className="font-medium">{task.title}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {task.reminderEnabled ? 'Reminder active' : 'Reminder off'}
+                    </p>
+                  </div>
+                ))}
+                {priorityTasks.length === 0 && (
+                  <p className="text-sm text-muted-foreground">Nothing urgent at the moment.</p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
         {isLoading ? (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {[...Array(6)].map((_, i) => (
               <Card key={i} className="animate-pulse">
                 <CardHeader>
-                  <div className="h-4 bg-muted rounded w-3/4"></div>
+                  <div className="h-4 w-3/4 rounded bg-muted"></div>
                 </CardHeader>
                 <CardContent>
-                  <div className="h-3 bg-muted rounded w-full mb-2"></div>
-                  <div className="h-3 bg-muted rounded w-2/3"></div>
+                  <div className="mb-2 h-3 w-full rounded bg-muted"></div>
+                  <div className="h-3 w-2/3 rounded bg-muted"></div>
                 </CardContent>
               </Card>
             ))}
@@ -181,28 +290,51 @@ const Dashboard = () => {
           <>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {tasks.map((task) => (
-                <Card key={task._id}>
+                <Card
+                  key={task.id}
+                  className={isOverdueTask(task) ? 'border-red-300 shadow-sm shadow-red-100' : ''}
+                >
                   <CardHeader>
-                    <div className="flex items-start justify-between">
+                    <div className="flex items-start justify-between gap-3">
                       <CardTitle className="text-lg">{task.title}</CardTitle>
-                      <Badge variant={getStatusBadgeVariant(task.status)}>
-                        {task.status}
-                      </Badge>
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <Badge variant={getStatusBadgeVariant(task.status)}>
+                          {task.status}
+                        </Badge>
+                        <Badge variant="outline" className={getPriorityBadgeClasses(task.priority)}>
+                          {task.priority}
+                        </Badge>
+                        {isOverdueTask(task) && (
+                          <Badge variant="destructive">Late</Badge>
+                        )}
+                        {!isOverdueTask(task) && isReminderDueTask(task) && (
+                          <Badge variant="secondary">Reminder Due</Badge>
+                        )}
+                      </div>
                     </div>
                     <CardDescription>
-                      {new Date(task.createdAt).toLocaleDateString()}
+                      Created {new Date(task.createdAt).toLocaleDateString()}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <p className="text-sm text-muted-foreground mb-4">{task.description}</p>
+                    <p className="mb-4 text-sm text-muted-foreground">{task.description}</p>
 
-                    {/* Status Update Dropdown */}
+                    <div className="mb-4 space-y-2 text-sm text-muted-foreground">
+                      <p>Due: {formatDueDate(task.dueDate)}</p>
+                      <p className="flex items-center gap-2">
+                        <BellRing className="h-4 w-4" />
+                        {task.reminderEnabled
+                          ? `Reminder ${task.reminderMinutesBefore === 1440 ? '1 day' : `${task.reminderMinutesBefore} min`} before`
+                          : 'Reminder disabled'}
+                      </p>
+                    </div>
+
                     <div className="mb-4">
-                      <label className="text-xs font-medium mb-2 block">Update Status</label>
+                      <label className="mb-2 block text-xs font-medium">Update Status</label>
                       <Select
                         value={task.status}
-                        onValueChange={(value: TaskStatus) => handleStatusUpdate(task._id, value)}
-                        disabled={updatingTaskId === task._id}
+                        onValueChange={(value: TaskStatus) => handleStatusUpdate(task.id, value)}
+                        disabled={updatingTaskId === task.id}
                       >
                         <SelectTrigger className="w-full">
                           <SelectValue />
@@ -218,35 +350,32 @@ const Dashboard = () => {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => navigate(`/tasks/edit/${task._id}`)}
+                        onClick={() => navigate(`/tasks/edit/${task.id}`)}
                       >
-                        <Edit className="h-4 w-4 mr-1" />
+                        <Edit className="mr-1 h-4 w-4" />
                         Edit
                       </Button>
-                      {user?.role === 'admin' && (
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => handleDelete(task._id)}
-                        >
-                          <Trash2 className="h-4 w-4 mr-1" />
-                          Delete
-                        </Button>
-                      )}
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => handleDelete(task.id)}
+                      >
+                        <Trash2 className="mr-1 h-4 w-4" />
+                        Delete
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
               ))}
             </div>
 
-            {/* ✅ Pagination now shows correctly */}
             {totalPages > 1 && (
               <div className="mt-8 flex justify-center">
                 <Pagination>
                   <PaginationContent>
                     <PaginationItem>
                       <PaginationPrevious
-                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                         className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
                       />
                     </PaginationItem>
@@ -263,7 +392,7 @@ const Dashboard = () => {
                     ))}
                     <PaginationItem>
                       <PaginationNext
-                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                        onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                         className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
                       />
                     </PaginationItem>

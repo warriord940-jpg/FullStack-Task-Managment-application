@@ -27,9 +27,10 @@ const SignIn = () => {
       });
       navigate('/dashboard');
     } catch (error) {
+      const description = error instanceof Error ? error.message : 'Invalid credentials';
       toast({
         title: 'Error',
-        description: 'Invalid credentials',
+        description,
         variant: 'destructive'
       });
     } finally {

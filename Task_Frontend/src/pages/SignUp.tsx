@@ -28,9 +28,10 @@ const SignUp = () => {
       });
       navigate('/dashboard');
     } catch (error) {
+      const description = error instanceof Error ? error.message : 'Failed to create account';
       toast({
         title: 'Error',
-        description: 'Failed to create account',
+        description,
         variant: 'destructive'
       });
     } finally {

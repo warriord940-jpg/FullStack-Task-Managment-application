@@ -21,6 +21,15 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const API_BASE_URL = import.meta.env.VITE_API_URL|| "http://localhost:5000";
 
+const getErrorMessage = async (response: Response, fallbackMessage: string) => {
+  try {
+    const data = await response.json();
+    return data.message || fallbackMessage;
+  } catch {
+    return fallbackMessage;
+  }
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
@@ -43,7 +52,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       body: JSON.stringify({ email, password }),
     });
 
-    if (!response.ok) throw new Error("Sign in failed");
+    if (!response.ok) {
+      throw new Error(await getErrorMessage(response, "Sign in failed"));
+    }
 
     const data = await response.json();
     const user: User = {
@@ -66,7 +77,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       body: JSON.stringify({ email, password, name }),
     });
 
-    if (!response.ok) throw new Error("Sign up failed");
+    if (!response.ok) {
+      throw new Error(await getErrorMessage(response, "Sign up failed"));
+    }
 
     const data = await response.json();
     const user: User = {

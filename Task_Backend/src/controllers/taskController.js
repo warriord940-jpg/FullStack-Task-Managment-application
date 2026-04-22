@@ -1,5 +1,73 @@
 const Task = require("../models/Task");
 
+const VALID_PRIORITIES = ["Low", "Medium", "High"];
+const VALID_REMINDER_MINUTES = [5, 15, 30, 60, 1440];
+
+const buildReminderFields = ({ dueDate, priority, reminderEnabled, reminderMinutesBefore, currentTask }) => {
+  const updates = {};
+
+  if (priority !== undefined) {
+    if (!VALID_PRIORITIES.includes(priority)) {
+      throw new Error("Please provide a valid priority (Low, Medium, or High)");
+    }
+    updates.priority = priority;
+  }
+
+  if (dueDate !== undefined) {
+    if (!dueDate) {
+      updates.dueDate = null;
+    } else {
+      const parsedDueDate = new Date(dueDate);
+      if (Number.isNaN(parsedDueDate.getTime())) {
+        throw new Error("Please provide a valid due date");
+      }
+      updates.dueDate = parsedDueDate;
+    }
+  }
+
+  const nextDueDate =
+    updates.dueDate !== undefined ? updates.dueDate : currentTask?.dueDate || null;
+  const nextReminderEnabled =
+    reminderEnabled !== undefined
+      ? reminderEnabled
+      : currentTask?.reminderEnabled || false;
+  const nextReminderMinutesBefore =
+    reminderMinutesBefore !== undefined
+      ? Number(reminderMinutesBefore)
+      : currentTask?.reminderMinutesBefore || 30;
+
+  if (reminderMinutesBefore !== undefined && !VALID_REMINDER_MINUTES.includes(nextReminderMinutesBefore)) {
+    throw new Error("Please provide a valid reminder time");
+  }
+
+  if (reminderEnabled !== undefined) {
+    updates.reminderEnabled = reminderEnabled;
+  }
+
+  if (reminderMinutesBefore !== undefined) {
+    updates.reminderMinutesBefore = nextReminderMinutesBefore;
+  }
+
+  if (nextReminderEnabled) {
+    if (!nextDueDate) {
+      throw new Error("A due date is required when reminders are enabled");
+    }
+
+    const reminderAt = new Date(nextDueDate.getTime() - nextReminderMinutesBefore * 60 * 1000);
+    updates.reminderAt = reminderAt;
+    updates.reminderSent = reminderAt <= new Date();
+  } else if (
+    reminderEnabled !== undefined ||
+    reminderMinutesBefore !== undefined ||
+    dueDate !== undefined
+  ) {
+    updates.reminderAt = null;
+    updates.reminderSent = false;
+  }
+
+  return updates;
+};
+
 // @route   GET /tasks
 // @desc    Get all tasks with pagination
 // @access  Private
@@ -35,12 +103,47 @@ exports.getTasks = async (req, res) => {
   }
 };
 
+// @route   GET /tasks/:id
+// @desc    Get a single task
+// @access  Private
+exports.getTaskById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const task = await Task.findById(id).populate("userId", "name email");
+
+    if (!task) {
+      return res.status(404).json({ message: "Task not found" });
+    }
+
+    if (
+      req.user.role !== "admin" &&
+      task.userId._id.toString() !== req.user._id.toString()
+    ) {
+      return res.status(403).json({ message: "Not authorized to view this task" });
+    }
+
+    res.status(200).json({ task });
+  } catch (error) {
+    console.error("Get task error:", error);
+    res.status(500).json({ message: "Server error while fetching task" });
+  }
+};
+
 // @route   POST /tasks
 // @desc    Create a new task
 // @access  Private
 exports.createTask = async (req, res) => {
   try {
-    const { title, description, status } = req.body;
+    const {
+      title,
+      description,
+      status,
+      dueDate,
+      priority,
+      reminderEnabled,
+      reminderMinutesBefore,
+    } = req.body;
 
     // Validation
     if (!title || !description) {
@@ -49,11 +152,19 @@ exports.createTask = async (req, res) => {
         .json({ message: "Please provide title and description" });
     }
 
+    const reminderFields = buildReminderFields({
+      dueDate,
+      priority,
+      reminderEnabled,
+      reminderMinutesBefore,
+    });
+
     const task = await Task.create({
       title,
       description,
       status: status || "pending",
       userId: req.user._id,
+      ...reminderFields,
     });
 
     const populatedTask = await Task.findById(task._id).populate(
@@ -67,6 +178,9 @@ exports.createTask = async (req, res) => {
     });
   } catch (error) {
     console.error("Create task error:", error);
+    if (error.message?.startsWith("Please provide") || error.message?.includes("required when reminders")) {
+      return res.status(400).json({ message: error.message });
+    }
     res.status(500).json({ message: "Server error while creating task" });
   }
 };
@@ -77,7 +191,15 @@ exports.createTask = async (req, res) => {
 exports.updateTask = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, description, status } = req.body;
+    const {
+      title,
+      description,
+      status,
+      dueDate,
+      priority,
+      reminderEnabled,
+      reminderMinutesBefore,
+    } = req.body;
 
     const task = await Task.findById(id);
 
@@ -100,6 +222,16 @@ exports.updateTask = async (req, res) => {
     if (description !== undefined) task.description = description;
     if (status !== undefined) task.status = status;
 
+    const reminderFields = buildReminderFields({
+      dueDate,
+      priority,
+      reminderEnabled,
+      reminderMinutesBefore,
+      currentTask: task,
+    });
+
+    Object.assign(task, reminderFields);
+
     await task.save();
 
     const updatedTask = await Task.findById(id).populate(
@@ -113,13 +245,16 @@ exports.updateTask = async (req, res) => {
     });
   } catch (error) {
     console.error("Update task error:", error);
+    if (error.message?.startsWith("Please provide") || error.message?.includes("required when reminders")) {
+      return res.status(400).json({ message: error.message });
+    }
     res.status(500).json({ message: "Server error while updating task" });
   }
 };
 
 // @route   DELETE /tasks/:id
 // @desc    Delete a task
-// @access  Admin only
+// @access  Private
 exports.deleteTask = async (req, res) => {
   try {
     const { id } = req.params;
@@ -128,6 +263,15 @@ exports.deleteTask = async (req, res) => {
 
     if (!task) {
       return res.status(404).json({ message: "Task not found" });
+    }
+
+    if (
+      req.user.role !== "admin" &&
+      task.userId.toString() !== req.user._id.toString()
+    ) {
+      return res
+        .status(403)
+        .json({ message: "Not authorized to delete this task" });
     }
 
     await Task.findByIdAndDelete(id);

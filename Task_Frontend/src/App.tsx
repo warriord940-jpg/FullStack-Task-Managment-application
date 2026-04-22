@@ -12,6 +12,7 @@ import SignUp from "./pages/SignUp";
 import Dashboard from "./pages/Dashboard";
 import TaskForm from "./pages/TaskForm";
 import NotFound from "./pages/NotFound";
+import ProtectedRoute from "./components/ProtectedRoute";
 
 const queryClient = new QueryClient();
 
@@ -19,21 +20,44 @@ const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider>
       <AuthProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
-            <Routes>
+        <div className="container">
+          <TooltipProvider>
+            <Toaster />
+            <Sonner />
+            <BrowserRouter>
+              <Routes>
               <Route path="/" element={<Index />} />
               <Route path="/signin" element={<SignIn />} />
               <Route path="/signup" element={<SignUp />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/tasks/new" element={<TaskForm />} />
-              <Route path="/tasks/edit/:id" element={<TaskForm />} />
+              <Route
+                path="/dashboard"
+                element={
+                  <ProtectedRoute>
+                    <Dashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/tasks/new"
+                element={
+                  <ProtectedRoute>
+                    <TaskForm />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/tasks/edit/:id"
+                element={
+                  <ProtectedRoute>
+                    <TaskForm />
+                  </ProtectedRoute>
+                }
+              />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>
         </TooltipProvider>
+        </div>
       </AuthProvider>
     </ThemeProvider>
   </QueryClientProvider>

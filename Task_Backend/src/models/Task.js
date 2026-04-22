@@ -3,6 +3,22 @@ const mongoose = require('mongoose');
 const taskSchema = new mongoose.Schema({
   dueDate: { type: Date },
   priority: { type: String, enum: ['Low','Medium','High'], default: 'Low' },
+  reminderEnabled: {
+    type: Boolean,
+    default: false
+  },
+  reminderMinutesBefore: {
+    type: Number,
+    default: 30
+  },
+  reminderAt: {
+    type: Date,
+    default: null
+  },
+  reminderSent: {
+    type: Boolean,
+    default: false
+  },
   title: {
     type: String,
     required: [true, 'Title is required'],

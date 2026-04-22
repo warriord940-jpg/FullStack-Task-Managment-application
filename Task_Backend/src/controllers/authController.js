@@ -12,9 +12,11 @@ const generateToken = (id) => {
 exports.signup = async (req, res) => {
   try {
     const { name, email, password } = req.body;
+    const trimmedName = name?.trim();
+    const normalizedEmail = email?.trim().toLowerCase();
 
     // Validation
-    if (!name || !email || !password) {
+    if (!trimmedName || !normalizedEmail || !password) {
       return res.status(400).json({ message: 'Please provide all required fields' });
     }
 
@@ -23,7 +25,7 @@ exports.signup = async (req, res) => {
     }
 
     // Check if user exists
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
       return res.status(400).json({ message: 'User already exists' });
     }
@@ -34,8 +36,8 @@ exports.signup = async (req, res) => {
 
     // Create user
     const user = await User.create({
-      name,
-      email,
+      name: trimmedName,
+      email: normalizedEmail,
       password: hashedPassword,
       role: 'user'
     });
@@ -47,6 +49,7 @@ exports.signup = async (req, res) => {
       message: 'User created successfully',
       token,
       user: {
+        _id: user._id,
         id: user._id,
         name: user.name,
         email: user.email,
@@ -55,6 +58,9 @@ exports.signup = async (req, res) => {
     });
   } catch (error) {
     console.error('Signup error:', error);
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ message: error.message });
+    }
     res.status(500).json({ message: 'Server error during signup' });
   }
 };
@@ -63,14 +69,15 @@ exports.signup = async (req, res) => {
 exports.signin = async (req, res) => {
   try {
     const { email, password } = req.body;
+    const normalizedEmail = email?.trim().toLowerCase();
 
     // Validation
-    if (!email || !password) {
+    if (!normalizedEmail || !password) {
       return res.status(400).json({ message: 'Please provide email and password' });
     }
 
     // Find user
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email: normalizedEmail });
     if (!user) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
@@ -88,6 +95,7 @@ exports.signin = async (req, res) => {
       message: 'Login successful',
       token,
       user: {
+        _id: user._id,
         id: user._id,
         name: user.name,
         email: user.email,

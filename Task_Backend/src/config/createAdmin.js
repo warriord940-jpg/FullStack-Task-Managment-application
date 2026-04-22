@@ -5,7 +5,7 @@ const createAdmin = async () => {
   try {
     const adminEmail = process.env.ADMIN_EMAIL;
     const adminPassword = process.env.ADMIN_PASSWORD;
-    const adminName = process.env.ADMIN_NAME;
+    const adminName = process.env.ADMIN_NAME || process.env.ADMIN_USERNAME;
 
     if (!adminEmail || !adminPassword || !adminName) {
       console.error('Admin credentials not found in environment variables');

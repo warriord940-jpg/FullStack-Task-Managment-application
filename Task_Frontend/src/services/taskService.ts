@@ -4,7 +4,16 @@ import {
   UpdateTaskDto,
 } from "@/types/task";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL;
+const API_BASE_URL = import.meta.env.VITE_API_URL|| "http://localhost:5000";
+
+const getErrorMessage = async (response: Response, fallbackMessage: string) => {
+  try {
+    const data = await response.json();
+    return data.message || fallbackMessage;
+  } catch {
+    return fallbackMessage;
+  }
+};
 
 const getAuthHeader = () => {
   const token = localStorage.getItem("token");
@@ -13,6 +22,21 @@ const getAuthHeader = () => {
     Authorization: `Bearer ${token}`,
   };
 };
+
+const mapTask = (task: any): Task => ({
+  id: task._id,
+  title: task.title,
+  description: task.description,
+  status: task.status,
+  createdAt: task.createdAt,
+  userId: task.userId,
+  dueDate: task.dueDate ?? null,
+  priority: task.priority ?? "Low",
+  reminderEnabled: Boolean(task.reminderEnabled),
+  reminderMinutesBefore: task.reminderMinutesBefore ?? 30,
+  reminderAt: task.reminderAt ?? null,
+  reminderSent: task.reminderSent ?? false,
+});
 
 export const taskService = {
   getTasks: async (
@@ -29,14 +53,7 @@ export const taskService = {
     const data = await response.json();
 
     return {
-      tasks: data.tasks.map((task: any) => ({
-        id: task._id,
-        title: task.title,
-        description: task.description,
-        status: task.status,
-        createdAt: task.createdAt,
-        userId: task.userId,
-      })),
+      tasks: data.tasks.map(mapTask),
       pagination: {
         total: data.pagination?.total || 0,
         pages: data.pagination?.pages || 1,
@@ -46,6 +63,19 @@ export const taskService = {
     };
   },
 
+  getTaskById: async (taskId: string): Promise<Task> => {
+    const response = await fetch(`${API_BASE_URL}/tasks/${taskId}`, {
+      headers: getAuthHeader(),
+    });
+
+    if (!response.ok) {
+      throw new Error(await getErrorMessage(response, "Failed to fetch task"));
+    }
+
+    const data = await response.json();
+    return mapTask(data.task);
+  },
+
   createTask: async (task: CreateTaskDto): Promise<Task> => {
     const response = await fetch(`${API_BASE_URL}/tasks`, {
       method: "POST",
@@ -53,15 +83,12 @@ export const taskService = {
       body: JSON.stringify(task),
     });
 
-    if (!response.ok) throw new Error("Failed to create task");
+    if (!response.ok) {
+      throw new Error(await getErrorMessage(response, "Failed to create task"));
+    }
 
     const data = await response.json();
-    return {
-      id: data._id,
-      ...task,
-      createdAt: data.createdAt,
-      userId: data.userId,
-    };
+    return mapTask(data.task);
   },
 
   updateTask: async (task: UpdateTaskDto): Promise<Task> => {
@@ -71,17 +98,12 @@ export const taskService = {
       body: JSON.stringify(task),
     });
 
-    if (!response.ok) throw new Error("Failed to update task");
+    if (!response.ok) {
+      throw new Error(await getErrorMessage(response, "Failed to update task"));
+    }
 
     const data = await response.json();
-    return {
-      id: data._id,
-      title: data.title,
-      description: data.description,
-      status: data.status,
-      createdAt: data.createdAt,
-      userId: data.userId,
-    };
+    return mapTask(data.task);
   },
 
   deleteTask: async (taskId: string): Promise<void> => {
@@ -90,7 +112,9 @@ export const taskService = {
       headers: getAuthHeader(),
     });
 
-    if (!response.ok) throw new Error("Failed to delete task");
+    if (!response.ok) {
+      throw new Error(await getErrorMessage(response, "Failed to delete task"));
+    }
   },
 
   updateTaskStatus: async (
@@ -103,16 +127,11 @@ export const taskService = {
       body: JSON.stringify({ status }),
     });
 
-    if (!response.ok) throw new Error("Failed to update task status");
+    if (!response.ok) {
+      throw new Error(await getErrorMessage(response, "Failed to update task status"));
+    }
 
     const data = await response.json();
-    return {
-      id: data.task._id,
-      title: data.task.title,
-      description: data.task.description,
-      status: data.task.status,
-      createdAt: data.task.createdAt,
-      userId: data.task.userId,
-    };
+    return mapTask(data.task);
   },
 };

@@ -3,9 +3,10 @@ const cors = require("cors");
 const helmet = require("helmet");
 const dotenv = require("dotenv");
 const connectDB = require("./src/config/db");
-// const createAdmin = require("./src/config/createAdmin");
+const createAdmin = require("./src/config/createAdmin");
 const authRoutes = require("./src/routes/authRoutes");
 const taskRoutes = require("./src/routes/taskRoutes");
+const { startReminderService } = require("./src/services/reminderService");
 
 dotenv.config();
 
@@ -42,6 +43,7 @@ const startServer = async () => {
   try {
     await connectDB();
     await createAdmin();
+    startReminderService();
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
     });
