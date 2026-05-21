@@ -3,12 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { taskService } from '@/services/taskService';
-import { Task, TaskStatus } from '@/types/task';
+import { Task, TaskPatternSuggestions, TaskStatus } from '@/types/task';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { Moon, Sun, Plus, LogOut, Edit, Trash2, AlertTriangle, BellRing, Flag } from 'lucide-react';
+import { Moon, Sun, Plus, LogOut, Edit, Trash2, AlertTriangle, BellRing, Flag, Lightbulb } from 'lucide-react';
 import {
   Pagination,
   PaginationContent,
@@ -28,6 +28,7 @@ import {
 const Dashboard = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [summaryTasks, setSummaryTasks] = useState<Task[]>([]);
+  const [patternSuggestions, setPatternSuggestions] = useState<TaskPatternSuggestions | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalTasks, setTotalTasks] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -49,13 +50,15 @@ const Dashboard = () => {
   const loadTasks = async () => {
     setIsLoading(true);
     try {
-      const [pagedResponse, summaryResponse] = await Promise.all([
+      const [pagedResponse, summaryResponse, suggestionResponse] = await Promise.all([
         taskService.getTasks(currentPage, tasksPerPage),
         taskService.getTasks(1, 1000),
+        taskService.getTaskSuggestions(),
       ]);
 
       setTasks(pagedResponse.tasks);
       setSummaryTasks(summaryResponse.tasks);
+      setPatternSuggestions(suggestionResponse);
       setTotalTasks(pagedResponse.pagination?.total || 0);
     } catch (error) {
       const description = error instanceof Error ? error.message : 'Failed to load tasks';
@@ -69,20 +72,26 @@ const Dashboard = () => {
     }
   };
 
+  const refreshTaskSuggestions = async () => {
+    const suggestionResponse = await taskService.getTaskSuggestions();
+    setPatternSuggestions(suggestionResponse);
+  };
+
   const handleStatusUpdate = async (taskId: string, newStatus: TaskStatus) => {
     setUpdatingTaskId(taskId);
     try {
-      await taskService.updateTaskStatus(taskId, newStatus);
+      const updatedTask = await taskService.updateTaskStatus(taskId, newStatus);
       setTasks((prevTasks) =>
         prevTasks.map((task) =>
-          task.id === taskId ? { ...task, status: newStatus } : task
+          task.id === taskId ? updatedTask : task
         )
       );
       setSummaryTasks((prevTasks) =>
         prevTasks.map((task) =>
-          task.id === taskId ? { ...task, status: newStatus } : task
+          task.id === taskId ? updatedTask : task
         )
       );
+      await refreshTaskSuggestions();
       toast({
         title: 'Success',
         description: 'Task status updated successfully',
@@ -105,6 +114,7 @@ const Dashboard = () => {
       setTasks((prevTasks) => prevTasks.filter((task) => task.id !== taskId));
       setSummaryTasks((prevTasks) => prevTasks.filter((task) => task.id !== taskId));
       setTotalTasks((prevTotal) => Math.max(0, prevTotal - 1));
+      await refreshTaskSuggestions();
       toast({
         title: 'Success',
         description: 'Task deleted successfully',
@@ -202,8 +212,8 @@ const Dashboard = () => {
           </Button>
         </div>
 
-        {!isLoading && (overdueTasks.length > 0 || reminderDueTasks.length > 0 || priorityTasks.length > 0) && (
-          <div className="mb-6 grid gap-4 md:grid-cols-2">
+        {!isLoading && (overdueTasks.length > 0 || reminderDueTasks.length > 0 || priorityTasks.length > 0 || patternSuggestions) && (
+          <div className="mb-6 grid gap-4 lg:grid-cols-3">
             <Card className="border-red-200 bg-red-50/70">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-red-700">
@@ -263,6 +273,30 @@ const Dashboard = () => {
                 )}
               </CardContent>
             </Card>
+
+            {patternSuggestions && (
+              <Card className="border-sky-200 bg-sky-50/70">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-sky-700">
+                    <Lightbulb className="h-5 w-5" />
+                    Smart Suggestions
+                  </CardTitle>
+                  <CardDescription>
+                    {patternSuggestions.metrics.completionRate}% completion rate,
+                    {' '}
+                    {patternSuggestions.metrics.upcomingTasks} due this week.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {patternSuggestions.suggestions.map((suggestion) => (
+                    <div key={`${suggestion.type}-${suggestion.title}`} className="rounded-md border border-sky-200 bg-background/80 p-3">
+                      <p className="font-medium">{suggestion.title}</p>
+                      <p className="text-sm text-muted-foreground">{suggestion.message}</p>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
           </div>
         )}
 
@@ -310,6 +344,11 @@ const Dashboard = () => {
                         {!isOverdueTask(task) && isReminderDueTask(task) && (
                           <Badge variant="secondary">Reminder Due</Badge>
                         )}
+                        {task.delayRiskDetected && task.status !== 'completed' && (
+                          <Badge variant="outline" className="border-sky-200 bg-sky-100 text-sky-700">
+                            Delay Risk
+                          </Badge>
+                        )}
                       </div>
                     </div>
                     <CardDescription>
@@ -327,6 +366,9 @@ const Dashboard = () => {
                           ? `Reminder ${task.reminderMinutesBefore === 1440 ? '1 day' : `${task.reminderMinutesBefore} min`} before`
                           : 'Reminder disabled'}
                       </p>
+                      {task.delayRiskDetected && task.delayRiskReason && task.status !== 'completed' && (
+                        <p className="text-sky-700">{task.delayRiskReason}</p>
+                      )}
                     </div>
 
                     <div className="mb-4">

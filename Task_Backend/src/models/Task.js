@@ -19,6 +19,14 @@ const taskSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  delayRiskDetected: {
+    type: Boolean,
+    default: false
+  },
+  delayRiskReason: {
+    type: String,
+    default: null
+  },
   title: {
     type: String,
     required: [true, 'Title is required'],
@@ -33,6 +41,10 @@ const taskSchema = new mongoose.Schema({
     type: String,
     enum: ['pending', 'completed'],
     default: 'pending'
+  },
+  completedAt: {
+    type: Date,
+    default: null
   },
   userId: {
     type: mongoose.Schema.Types.ObjectId,

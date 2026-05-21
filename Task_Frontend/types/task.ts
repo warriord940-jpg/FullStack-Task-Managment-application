@@ -15,6 +15,36 @@ export interface Task {
   reminderMinutesBefore: ReminderMinutesBefore;
   reminderAt?: string | null;
   reminderSent?: boolean;
+  delayRiskDetected?: boolean;
+  delayRiskReason?: string | null;
+  completedAt?: string | null;
+}
+
+export interface FrequentDelayedType {
+  type: string;
+  count: number;
+}
+
+export interface TaskPatternMetrics {
+  totalTasks: number;
+  completedTasks: number;
+  pendingTasks: number;
+  overdueTasks: number;
+  upcomingTasks: number;
+  highPriorityTasks: number;
+  frequentDelayedTypes: FrequentDelayedType[];
+  completionRate: number;
+}
+
+export interface TaskSuggestion {
+  type: string;
+  title: string;
+  message: string;
+}
+
+export interface TaskPatternSuggestions {
+  metrics: TaskPatternMetrics;
+  suggestions: TaskSuggestion[];
 }
 
 export interface CreateTaskDto {

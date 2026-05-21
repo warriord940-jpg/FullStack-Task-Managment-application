@@ -9,10 +9,48 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, CalendarDays } from 'lucide-react';
+import { DayPicker } from 'react-day-picker';
+import 'react-day-picker/dist/style.css';
 import { ReminderMinutesBefore, TaskPriority, TaskStatus } from '@/types/task';
 
 const REMINDER_OPTIONS: ReminderMinutesBefore[] = [5, 15, 30, 60, 1440];
+const TIME_OPTIONS = Array.from({ length: 48 }, (_, index) => {
+  const hours = Math.floor(index / 2);
+  const minutes = index % 2 === 0 ? '00' : '30';
+  const value = `${String(hours).padStart(2, '0')}:${minutes}`;
+  const label = new Date(2000, 0, 1, hours, Number(minutes)).toLocaleTimeString([], {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+
+  return { value, label };
+});
+const ONE_HOUR_MS = 60 * 60 * 1000;
+const ONE_DAY_MS = 24 * ONE_HOUR_MS;
+
+const getAutomaticPriority = (value: string): TaskPriority => {
+  if (!value) return 'Low';
+
+  const dueTime = new Date(value).getTime();
+  if (Number.isNaN(dueTime)) return 'Low';
+
+  const timeUntilDue = dueTime - Date.now();
+  if (timeUntilDue < ONE_DAY_MS) return 'High';
+  if (timeUntilDue < 3 * ONE_DAY_MS) return 'Medium';
+  return 'Low';
+};
+
+const getReminderMinutesForPriority = (taskPriority: TaskPriority): ReminderMinutesBefore => {
+  switch (taskPriority) {
+    case 'High':
+      return 5;
+    case 'Medium':
+      return 60;
+    default:
+      return 1440;
+  }
+};
 
 const formatDateTimeLocal = (value?: string | null) => {
   if (!value) return '';
@@ -23,6 +61,29 @@ const formatDateTimeLocal = (value?: string | null) => {
   const offset = date.getTimezoneOffset();
   const localDate = new Date(date.getTime() - offset * 60 * 1000);
   return localDate.toISOString().slice(0, 16);
+};
+
+const getSelectedDate = (value: string) => {
+  if (!value) return undefined;
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+};
+
+const getTimeValue = (value: string) => {
+  if (!value) return '09:00';
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '09:00';
+
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+};
+
+const mergeDateAndTime = (date: Date, time: string) => {
+  const [hours = '9', minutes = '0'] = time.split(':');
+  const nextDate = new Date(date);
+  nextDate.setHours(Number(hours), Number(minutes), 0, 0);
+  return formatDateTimeLocal(nextDate.toISOString());
 };
 
 const TaskForm = () => {
@@ -39,6 +100,8 @@ const TaskForm = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const selectedDueDate = getSelectedDate(dueDate);
+  const dueTime = getTimeValue(dueDate);
 
   useEffect(() => {
     if (!user) {
@@ -50,6 +113,20 @@ const TaskForm = () => {
       loadTask(id);
     }
   }, [user, id, isEditMode, navigate]);
+
+  useEffect(() => {
+    if (!dueDate) {
+      setPriority('Low');
+      setReminderEnabled(false);
+      setReminderMinutesBefore(30);
+      return;
+    }
+
+    const automaticPriority = getAutomaticPriority(dueDate);
+    setPriority(automaticPriority);
+    setReminderEnabled(true);
+    setReminderMinutesBefore(getReminderMinutesForPriority(automaticPriority));
+  }, [dueDate]);
 
   const loadTask = async (taskId: string) => {
     setIsLoading(true);
@@ -114,6 +191,20 @@ const TaskForm = () => {
     }
   };
 
+  const handleDueDateSelect = (date?: Date) => {
+    if (!date) {
+      setDueDate('');
+      return;
+    }
+
+    setDueDate(mergeDateAndTime(date, dueTime));
+  };
+
+  const handleDueTimeChange = (time: string) => {
+    if (!selectedDueDate) return;
+    setDueDate(mergeDateAndTime(selectedDueDate, time));
+  };
+
   return (
     <div className="min-h-screen bg-background p-4">
       <div className="container mx-auto max-w-2xl">
@@ -173,8 +264,8 @@ const TaskForm = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="priority">Priority</Label>
-                  <Select value={priority} onValueChange={(value) => setPriority(value as TaskPriority)}>
+                  <Label htmlFor="priority">Auto Priority</Label>
+                  <Select value={priority} disabled>
                     <SelectTrigger id="priority">
                       <SelectValue />
                     </SelectTrigger>
@@ -189,37 +280,70 @@ const TaskForm = () => {
 
               <div className="space-y-2">
                 <Label htmlFor="dueDate">Due Date</Label>
-                <Input
-                  id="dueDate"
-                  type="datetime-local"
-                  value={dueDate}
-                  onChange={(e) => setDueDate(e.target.value)}
-                />
+                <div className="rounded-md border p-3">
+                  <DayPicker
+                    mode="single"
+                    selected={selectedDueDate}
+                    onSelect={handleDueDateSelect}
+                    className="mx-auto"
+                  />
+                  <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto]">
+                    <div className="space-y-2">
+                      <Label htmlFor="dueTime">Time</Label>
+                      <Select
+                        value={dueTime}
+                        onValueChange={handleDueTimeChange}
+                        disabled={!selectedDueDate}
+                      >
+                        <SelectTrigger id="dueTime">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {TIME_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="self-end"
+                      onClick={() => setDueDate('')}
+                      disabled={!selectedDueDate}
+                    >
+                      <CalendarDays className="h-4 w-4" />
+                      Clear
+                    </Button>
+                  </div>
+                </div>
               </div>
 
               <div className="space-y-4 rounded-lg border p-4">
                 <div className="flex items-center justify-between gap-4">
                   <div className="space-y-1">
-                    <Label htmlFor="reminderEnabled">Late Task Reminder</Label>
+                    <Label htmlFor="reminderEnabled">Auto Reminder</Label>
                     <p className="text-sm text-muted-foreground">
-                      Schedule a reminder before the due time so late tasks do not slip through.
+                      Reminder timing is selected from the deadline priority.
                     </p>
                   </div>
                   <input
                     id="reminderEnabled"
                     type="checkbox"
                     checked={reminderEnabled}
-                    onChange={(e) => setReminderEnabled(e.target.checked)}
+                    readOnly
                     className="h-4 w-4"
                   />
                 </div>
 
                 {reminderEnabled && (
                   <div className="space-y-2">
-                    <Label htmlFor="reminderMinutesBefore">Reminder Time</Label>
+                    <Label htmlFor="reminderMinutesBefore">Auto Reminder Time</Label>
                     <Select
                       value={String(reminderMinutesBefore)}
-                      onValueChange={(value) => setReminderMinutesBefore(Number(value) as ReminderMinutesBefore)}
+                      disabled
                     >
                       <SelectTrigger id="reminderMinutesBefore">
                         <SelectValue />

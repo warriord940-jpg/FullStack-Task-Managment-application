@@ -1,6 +1,7 @@
 import {
   Task,
   CreateTaskDto,
+  TaskPatternSuggestions,
   UpdateTaskDto,
 } from "@/types/task";
 
@@ -23,7 +24,25 @@ const getAuthHeader = () => {
   };
 };
 
-const mapTask = (task: any): Task => ({
+interface ServerTask {
+  _id: string;
+  title: string;
+  description: string;
+  status: Task["status"];
+  createdAt: string;
+  userId: Task["userId"];
+  dueDate?: string | null;
+  priority?: Task["priority"];
+  reminderEnabled?: boolean;
+  reminderMinutesBefore?: Task["reminderMinutesBefore"];
+  reminderAt?: string | null;
+  reminderSent?: boolean;
+  delayRiskDetected?: boolean;
+  delayRiskReason?: string | null;
+  completedAt?: string | null;
+}
+
+const mapTask = (task: ServerTask): Task => ({
   id: task._id,
   title: task.title,
   description: task.description,
@@ -36,6 +55,9 @@ const mapTask = (task: any): Task => ({
   reminderMinutesBefore: task.reminderMinutesBefore ?? 30,
   reminderAt: task.reminderAt ?? null,
   reminderSent: task.reminderSent ?? false,
+  delayRiskDetected: task.delayRiskDetected ?? false,
+  delayRiskReason: task.delayRiskReason ?? null,
+  completedAt: task.completedAt ?? null,
 });
 
 export const taskService = {
@@ -74,6 +96,18 @@ export const taskService = {
 
     const data = await response.json();
     return mapTask(data.task);
+  },
+
+  getTaskSuggestions: async (): Promise<TaskPatternSuggestions> => {
+    const response = await fetch(`${API_BASE_URL}/tasks/suggestions`, {
+      headers: getAuthHeader(),
+    });
+
+    if (!response.ok) {
+      throw new Error(await getErrorMessage(response, "Failed to analyze task patterns"));
+    }
+
+    return response.json();
   },
 
   createTask: async (task: CreateTaskDto): Promise<Task> => {
