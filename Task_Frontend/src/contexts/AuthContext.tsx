@@ -19,7 +19,8 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const API_BASE_URL = import.meta.env.VITE_API_URL|| "http://localhost:5000";
+const API_BASE_URL = import.meta.env.VITE_API_URL;
+const isDemoMode = import.meta.env.VITE_DEMO_MODE === "true" || !API_BASE_URL;
 
 const getErrorMessage = async (response: Response, fallbackMessage: string) => {
   try {
@@ -45,6 +46,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   const signIn = async (email: string, password: string) => {
+    if (isDemoMode) {
+      const user: User = {
+        id: `demo-${email.toLowerCase()}`,
+        email,
+        name: email.split("@")[0] || "Demo User",
+        role: email.toLowerCase().includes("admin") ? "admin" : "user",
+      };
+
+      setUser(user);
+      localStorage.setItem("user", JSON.stringify(user));
+      localStorage.setItem("token", `demo-token-${Date.now()}`);
+      return;
+    }
+
     console.log("FINAL URL:", `${API_BASE_URL}/auth/signin`);
     const response = await fetch(`${API_BASE_URL}/auth/signin`, {
       method: "POST",
@@ -70,6 +85,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const signUp = async (email: string, password: string, name: string) => {
+    if (isDemoMode) {
+      const user: User = {
+        id: `demo-${email.toLowerCase()}`,
+        email,
+        name,
+        role: "user",
+      };
+
+      setUser(user);
+      localStorage.setItem("user", JSON.stringify(user));
+      localStorage.setItem("token", `demo-token-${Date.now()}`);
+      return;
+    }
+
     console.log("FINAL URL:", `${API_BASE_URL}/auth/signup`);
     const response = await fetch(`${API_BASE_URL}/auth/signup`, {
       method: "POST",
