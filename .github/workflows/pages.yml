@@ -40,8 +40,8 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          VITE_API_URL: ${{ vars.VITE_API_URL }}
-          VITE_DEMO_MODE: ${{ vars.VITE_API_URL == '' && 'true' || 'false' }}
+          VITE_API_URL: https://fullstack-task-managment-application.onrender.com
+          VITE_DEMO_MODE: "false"
 
       - name: Add SPA fallback
         run: cp dist/index.html dist/404.html
